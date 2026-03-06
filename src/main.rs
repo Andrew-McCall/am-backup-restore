@@ -1,4 +1,4 @@
-use std::{env, process};
+use std::{env, fs, path::Path, process};
 
 fn take_once(slot: &mut Option<String>, value: Option<String>, flag: &str) {
     if slot.is_some() {
@@ -91,12 +91,27 @@ impl BackupOptions {
     }
 }
 
-fn backup(opt: BackupOptions) {
+fn backup(mut opt: BackupOptions) -> Result<(), std::io::Error> {
+    let config = opt.config.as_deref().unwrap_or("./.config.AMBK");
+    let config_path = Path::new(config);
+    if fs::exists(config_path)? {
+        fs::read_to_string(config_path)?
+            .lines()
+            .for_each(|l| opt.files.push(l.to_owned()));
+    } else {
+        println!(
+            "WARNING: '{}' does not exist.",
+            config_path.to_string_lossy()
+        );
+    }
+
     println!("{:?}", opt.password);
     println!("{:?}", opt.files);
     println!("{:?}", opt.config);
     println!("{:?}", opt.salt);
     println!("{:?}", opt.output);
+
+    Ok(())
 }
 
 fn restore(opt: RestoreOptions) {
@@ -108,7 +123,7 @@ fn main() {
     let mut args = env::args().skip(1);
 
     match args.next().as_deref() {
-        Some("backup") => backup(BackupOptions::parse(&mut args)),
+        Some("backup") => backup(BackupOptions::parse(&mut args)).expect("I expect this to work"),
         Some("restore") => restore(RestoreOptions::parse(&mut args)),
         _ => {
             eprintln!("Usage: program <backup|restore> [options]");
