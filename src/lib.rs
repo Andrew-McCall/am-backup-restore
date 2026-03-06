@@ -1,8 +1,8 @@
-use std::path::Path;
-use tokio::io::AsyncWriteExt;
-use crypt_guard::{DecryptBuilder, EncryptBuilder, KyberKeygenBuilder, SymmetricAlg};
 use crypt_guard::error::CryptError;
+use crypt_guard::{DecryptBuilder, EncryptBuilder, KyberKeygenBuilder, SymmetricAlg};
+use std::path::Path;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 
 /// Magic bytes identifying an am-backup payload file: "AMBK"
 const FORMAT_MAGIC: &[u8] = b"AMBK";
@@ -84,7 +84,10 @@ impl EncryptionConfig {
 
     /// Creates a config with an explicit salt.
     pub fn with_salt(passphrase: impl Into<String>, salt: impl Into<String>) -> Self {
-        Self { passphrase: passphrase.into(), salt: salt.into() }
+        Self {
+            passphrase: passphrase.into(),
+            salt: salt.into(),
+        }
     }
 }
 
@@ -259,20 +262,24 @@ pub async fn backup_payload(
 
     // Salt (length-prefixed).
     let salt_bytes = config.salt.as_bytes();
-    file.write_all(&(salt_bytes.len() as u32).to_le_bytes()).await?;
+    file.write_all(&(salt_bytes.len() as u32).to_le_bytes())
+        .await?;
     file.write_all(salt_bytes).await?;
 
     // Kyber secret key (length-prefixed) — stored so restore only needs passphrase.
-    file.write_all(&(secret_key.len() as u32).to_le_bytes()).await?;
+    file.write_all(&(secret_key.len() as u32).to_le_bytes())
+        .await?;
     file.write_all(&secret_key).await?;
 
     // Kyber cipher (length-prefixed) — required for decryption.
-    file.write_all(&(enc.cipher.len() as u32).to_le_bytes()).await?;
+    file.write_all(&(enc.cipher.len() as u32).to_le_bytes())
+        .await?;
     file.write_all(&enc.cipher).await?;
 
     // XChaCha20 nonce (length-prefixed) — required for decryption.
     let nonce_bytes = nonce.as_bytes();
-    file.write_all(&(nonce_bytes.len() as u32).to_le_bytes()).await?;
+    file.write_all(&(nonce_bytes.len() as u32).to_le_bytes())
+        .await?;
     file.write_all(nonce_bytes).await?;
 
     // Encrypted blob.
@@ -303,17 +310,27 @@ mod tests {
         tokio::fs::write(&src, b"hello, world!").await.unwrap();
 
         let backup = tmp("single.ambk");
-        let enc = backup_payload(&[src.as_path()], &EncryptionConfig::with_salt("passphrase", "salt"), &backup)
-            .await
-            .unwrap();
+        let enc = backup_payload(
+            &[src.as_path()],
+            &EncryptionConfig::with_salt("passphrase", "salt"),
+            &backup,
+        )
+        .await
+        .unwrap();
 
-        assert!(enc.skipped.is_empty(), "unexpected skips: {:?}", enc.skipped);
+        assert!(
+            enc.skipped.is_empty(),
+            "unexpected skips: {:?}",
+            enc.skipped
+        );
         assert_eq!(enc.success.len(), 1);
 
         // Remove source so restore has real work to do.
         tokio::fs::remove_file(&src).await.unwrap();
 
-        let dec = restore_payload(&backup, &EncryptionConfig::new("passphrase")).await.unwrap();
+        let dec = restore_payload(&backup, &EncryptionConfig::new("passphrase"))
+            .await
+            .unwrap();
         assert!(dec.skipped.is_empty(), "restore skips: {:?}", dec.skipped);
         assert_eq!(dec.success.len(), 1);
 
@@ -341,9 +358,13 @@ mod tests {
 
         let targets: Vec<&Path> = files.iter().map(|(p, _)| p.as_path()).collect();
         let backup = tmp("multi.ambk");
-        let enc = backup_payload(&targets, &EncryptionConfig::with_salt("passphrase", "salt"), &backup)
-            .await
-            .unwrap();
+        let enc = backup_payload(
+            &targets,
+            &EncryptionConfig::with_salt("passphrase", "salt"),
+            &backup,
+        )
+        .await
+        .unwrap();
 
         assert!(enc.skipped.is_empty());
         assert_eq!(enc.success.len(), 3);
@@ -352,7 +373,9 @@ mod tests {
             tokio::fs::remove_file(path).await.unwrap();
         }
 
-        let dec = restore_payload(&backup, &EncryptionConfig::new("passphrase")).await.unwrap();
+        let dec = restore_payload(&backup, &EncryptionConfig::new("passphrase"))
+            .await
+            .unwrap();
         assert!(dec.skipped.is_empty(), "restore skips: {:?}", dec.skipped);
         assert_eq!(dec.success.len(), 3);
 
@@ -377,12 +400,18 @@ mod tests {
         tokio::fs::write(&src, &binary).await.unwrap();
 
         let backup = tmp("binary.ambk");
-        backup_payload(&[src.as_path()], &EncryptionConfig::with_salt("pass", "salt"), &backup)
-            .await
-            .unwrap();
+        backup_payload(
+            &[src.as_path()],
+            &EncryptionConfig::with_salt("pass", "salt"),
+            &backup,
+        )
+        .await
+        .unwrap();
 
         tokio::fs::remove_file(&src).await.unwrap();
-        restore_payload(&backup, &EncryptionConfig::new("pass")).await.unwrap();
+        restore_payload(&backup, &EncryptionConfig::new("pass"))
+            .await
+            .unwrap();
 
         assert_eq!(tokio::fs::read(&src).await.unwrap(), binary);
 
@@ -401,12 +430,18 @@ mod tests {
         tokio::fs::write(&src, b"").await.unwrap();
 
         let backup = tmp("empty.ambk");
-        backup_payload(&[src.as_path()], &EncryptionConfig::with_salt("pass", "salt"), &backup)
-            .await
-            .unwrap();
+        backup_payload(
+            &[src.as_path()],
+            &EncryptionConfig::with_salt("pass", "salt"),
+            &backup,
+        )
+        .await
+        .unwrap();
 
         tokio::fs::remove_file(&src).await.unwrap();
-        restore_payload(&backup, &EncryptionConfig::new("pass")).await.unwrap();
+        restore_payload(&backup, &EncryptionConfig::new("pass"))
+            .await
+            .unwrap();
 
         assert!(tokio::fs::read(&src).await.unwrap().is_empty());
 
@@ -456,9 +491,13 @@ mod tests {
         tokio::fs::write(&src, b"data").await.unwrap();
 
         let backup = tmp("header.ambk");
-        backup_payload(&[src.as_path()], &EncryptionConfig::with_salt("pass", "my-salt"), &backup)
-            .await
-            .unwrap();
+        backup_payload(
+            &[src.as_path()],
+            &EncryptionConfig::with_salt("pass", "my-salt"),
+            &backup,
+        )
+        .await
+        .unwrap();
 
         let raw = tokio::fs::read(&backup).await.unwrap();
         assert_eq!(&raw[..4], b"AMBK", "magic bytes missing");
@@ -467,7 +506,10 @@ mod tests {
         // Layout after magic+version: [4B salt_len][salt...]
         let salt_len = u32::from_le_bytes(raw[5..9].try_into().unwrap()) as usize;
         let salt_bytes = &raw[9..9 + salt_len];
-        assert_eq!(salt_bytes, b"my-salt", "salt not stored in plaintext header");
+        assert_eq!(
+            salt_bytes, b"my-salt",
+            "salt not stored in plaintext header"
+        );
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
         tokio::fs::remove_file(&backup).await.unwrap();
@@ -478,9 +520,13 @@ mod tests {
     #[tokio::test]
     async fn restore_wrong_magic_returns_error() {
         let garbage = tmp("garbage.ambk");
-        tokio::fs::write(&garbage, b"this is not a backup file").await.unwrap();
+        tokio::fs::write(&garbage, b"this is not a backup file")
+            .await
+            .unwrap();
 
-        let err = restore_payload(&garbage, &EncryptionConfig::new("pass")).await.unwrap_err();
+        let err = restore_payload(&garbage, &EncryptionConfig::new("pass"))
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, RestoreError::BadMagic),
             "expected BadMagic, got: {err}",
